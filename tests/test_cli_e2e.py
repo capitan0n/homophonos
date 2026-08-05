@@ -148,6 +148,53 @@ class TestCliEndToEnd(unittest.TestCase):
         )
         self.assertIn("Unloaded", output)
 
+    def test_retune_latency_after_create_end_to_end(self):
+        """Create a combined sink, then retune its latency (option 6)
+        without recreating it. The retune should call
+        set-sink-latency-offset per slave and report success."""
+        calls = []
+
+        def _tracking_dispatch(args, capture_output, text, timeout, check):
+            calls.append(list(args[1:]))
+            return _fake_pactl_dispatch(args, capture_output, text, timeout, check)
+
+        stdin_text = "\n".join(
+            [
+                "1",  # create new
+                "1,2",  # select internal + BT1
+                "n",  # skip latency tuning at creation
+                # Name chosen so sink_name_from_display() -> "combined_pc_plus_bt",
+                # which already exists in sample_sinks.json, satisfying the
+                # retune liveness check against the (mocked) live sink list.
+                "pc plus bt",  # display name
+                "n",  # don't save profile
+                "6",  # retune latency
+                "50000",  # new offset for slave 1
+                "",  # keep slave 2's current offset
+                "0",  # exit
+            ]
+        ) + "\n"
+
+        with mock.patch("subprocess.run", side_effect=_tracking_dispatch), mock.patch(
+            "shutil.which", return_value="/usr/bin/pactl"
+        ), mock.patch("sys.stdin", io.StringIO(stdin_text)), mock.patch(
+            "sys.stdout", new_callable=io.StringIO
+        ) as fake_stdout:
+            cli.run()
+        output = fake_stdout.getvalue()
+
+        self.assertIn("Latency offsets applied", output)
+        offset_calls = [c for c in calls if c and c[0] == "set-sink-latency-offset"]
+        self.assertEqual(len(offset_calls), 2)
+        # First slave got the new 50000 value we typed.
+        self.assertIn("50000", offset_calls[0])
+
+    def test_retune_without_active_sink_warns(self):
+        """Option 6 with nothing created/loaded this session should warn,
+        not crash or call pactl for offsets."""
+        output = self._run_with_scripted_input(["6", "0"])
+        self.assertIn("No combined sink from this session", output)
+
     def test_invalid_menu_choice_does_not_crash(self):
         output = self._run_with_scripted_input(["99", "0"])
         self.assertIn("Not a valid option", output)

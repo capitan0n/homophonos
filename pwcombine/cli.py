@@ -88,18 +88,18 @@ def action_load_profile(remember_last: dict) -> None:
     ui.print_missing_warning(resolved)
 
     if not resolved.can_create:
-        ui.error(
-            f"None of the sinks saved in '{profile.name}' are currently connected. "
-            "Nothing to combine."
-        )
-        return
-
-    if len(resolved.available) < 2:
-        only = resolved.available[0].sink_name
-        ui.warn(
-            f"Only one sink from '{profile.name}' is currently available ({only}). "
-            "A combined sink needs at least two, so nothing was created."
-        )
+        if not resolved.available:
+            ui.error(
+                f"None of the sinks saved in '{profile.name}' are currently "
+                "connected. Nothing to combine."
+            )
+        else:
+            only = resolved.available[0].sink_name
+            ui.warn(
+                f"Only one sink from '{profile.name}' is currently available "
+                f"({only}). A combined sink needs at least two, so nothing "
+                "was created."
+            )
         return
 
     try:
@@ -179,6 +179,46 @@ def action_unload_combined(remember_last: dict) -> None:
         remember_last.clear()
 
 
+def action_retune_latency(remember_last: dict) -> None:
+    ui.header("Retune Latency")
+    slaves = remember_last.get("slaves")
+    combined_name = remember_last.get("combined_sink_name", "")
+
+    if not slaves or not combined_name:
+        ui.warn(
+            "No combined sink from this session to retune. Create or load one "
+            "first (option 1 or 2), then retune it here."
+        )
+        return
+
+    # Confirm the combined sink this session created/loaded still exists;
+    # if the user unloaded it (or it vanished), set-sink-latency-offset on
+    # its slaves would still "work" but tune sinks that aren't currently
+    # combined, which is confusing. Warn instead.
+    live_sinks = _load_live_sinks_or_die()
+    live_names = {s.name for s in live_sinks}
+    if combined_name not in live_names:
+        ui.warn(
+            f"The combined sink '{combined_name}' is no longer loaded. "
+            "Recreate it before retuning."
+        )
+        return
+
+    new_slaves = ui.prompt_retune_offsets(slaves)
+
+    failures = combiner.apply_latency_offsets(new_slaves)
+    if failures:
+        for slave, message in failures:
+            ui.error(f"Could not set offset on '{slave.sink_name}': {message}")
+        ui.warn("Some offsets were not applied; others (if any) were.")
+    else:
+        ui.success("Latency offsets applied.")
+
+    # Remember the new offsets so a subsequent "save profile" persists the
+    # tuned values, and a further retune starts from them.
+    remember_last["slaves"] = new_slaves
+
+
 def action_manage_profiles() -> None:
     ui.header("Saved Profiles")
     profiles = config.load_profiles()
@@ -218,7 +258,8 @@ def run() -> int:
         "3": lambda: action_save_profile(remember_last),
         "4": action_list_sinks,
         "5": lambda: action_unload_combined(remember_last),
-        "6": action_manage_profiles,
+        "6": lambda: action_retune_latency(remember_last),
+        "7": action_manage_profiles,
     }
 
     while True:

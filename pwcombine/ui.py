@@ -103,17 +103,18 @@ def select_indices(
 def prompt_latency_offsets(slaves: list[Sink]) -> list[SlaveSpec]:
     """Ask whether to set per-device latency offsets, and collect them.
 
-    Bluetooth sinks typically need a *positive* offset (delay) applied
-    to the non-Bluetooth sinks so they wait for BT's extra decode/
-    transmit latency -- or a negative offset on the BT sink itself,
-    depending on which is easier for the user to reason about. We
-    just expose the raw offset per sink and let the user tune by ear.
+    A positive offset delays that specific sink. Bluetooth arrives late
+    because of its decode/transmit latency, so the fix is a positive
+    offset on the *non-Bluetooth* (usually internal/wired) sink, making
+    it wait for the Bluetooth path to catch up. We expose the raw
+    per-sink offset and let the user tune by ear from there.
     """
     header("Latency Tuning (optional)")
     info("If Bluetooth speakers sound out of sync or echo against your")
-    info("other speakers, you can add a latency offset in microseconds.")
-    info("Positive values delay that sink. Typical Bluetooth offsets: 40000-150000.")
-    info("Leave blank to skip / use 0 for a sink.")
+    info("other speakers, add a latency offset in microseconds.")
+    info("A positive offset delays that sink. Put it on your internal/wired")
+    info("output so it waits for Bluetooth to catch up (typical: 40000-150000).")
+    info("Leave blank / 0 to skip a sink.")
 
     specs: list[SlaveSpec] = []
     if not confirm("Set latency offsets now?", default=False):
@@ -131,6 +132,34 @@ def prompt_latency_offsets(slaves: list[Sink]) -> list[SlaveSpec]:
         specs.append(SlaveSpec(sink_name=sink.name, latency_offset_us=offset))
 
     return specs
+
+
+def prompt_retune_offsets(slaves: list[SlaveSpec]) -> list[SlaveSpec]:
+    """Re-ask latency offsets for slaves of an already-running combined sink.
+
+    Shows each slave's current offset as the default so the user can
+    nudge one value and leave the rest untouched by pressing Enter.
+    Returns a fresh list of SlaveSpec with the (possibly) new offsets;
+    the caller applies them via pactl set-sink-latency-offset.
+    """
+    header("Retune Latency")
+    info("Enter a new microsecond offset for each sink, or press Enter to")
+    info("keep its current value. A positive offset delays that sink.")
+
+    updated: list[SlaveSpec] = []
+    for slave in slaves:
+        current = slave.latency_offset_us
+        raw = prompt(f"  Offset for '{slave.sink_name}' (us) [{current}]:")
+        offset = current
+        if raw:
+            try:
+                offset = int(raw)
+            except ValueError:
+                warn(f"'{raw}' isn't a whole number, keeping {current}.")
+                offset = current
+        updated.append(SlaveSpec(sink_name=slave.sink_name, latency_offset_us=offset))
+
+    return updated
 
 
 def prompt_profile_name(default: str = "") -> str:
@@ -163,6 +192,7 @@ def main_menu() -> str:
     print("  3. Save current selection as a profile")
     print("  4. List active sinks")
     print("  5. Unload a combined sink")
-    print("  6. Manage saved profiles (view/delete)")
+    print("  6. Retune latency on the last combined sink")
+    print("  7. Manage saved profiles (view/delete)")
     print("  0. Exit")
     return prompt("Choose an option:")

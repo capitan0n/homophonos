@@ -192,6 +192,30 @@ class TestModuleLoadArgFormatting(unittest.TestCase):
         self.assertEqual(len(slave_items), 1)
         self.assertEqual(slave_items[0], "slaves=alsa_output.foo,bluez_output.bar:80000")
 
+    def test_load_combine_sink_module_escapes_quotes_in_description(self):
+        """A double quote or backslash in the user's label must be
+        escaped so it can't terminate the quoted property value early."""
+        captured_args = {}
+
+        def fake_run(args, capture_output, text, timeout, check):
+            captured_args["args"] = args
+            return _fake_completed_process("123")
+
+        with mock.patch("subprocess.run", side_effect=fake_run):
+            pactl_client.load_combine_sink_module(
+                sink_name="combined_x",
+                display_name='Weird" \\ name',
+                slave_args=["a", "b"],
+            )
+
+        desc_items = [a for a in captured_args["args"] if "device.description" in a]
+        self.assertEqual(len(desc_items), 1)
+        # The raw quote/backslash must not appear unescaped inside the value.
+        self.assertEqual(
+            desc_items[0],
+            'sink_properties=device.description="Weird\\" \\\\ name"',
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

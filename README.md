@@ -30,8 +30,18 @@ No `pip install` needed — everything used is in the standard library.
 
 ## Usage
 
+Run straight from a checkout:
+
 ```bash
 ./pw-combine
+```
+
+Or install it so `pw-combine` is on your PATH (still zero third-party
+dependencies — this only registers the entry point):
+
+```bash
+pip install --user .
+pw-combine
 ```
 
 You'll get a menu:
@@ -43,7 +53,8 @@ You'll get a menu:
   3. Save current selection as a profile
   4. List active sinks
   5. Unload a combined sink
-  6. Manage saved profiles (view/delete)
+  6. Retune latency on the last combined sink
+  7. Manage saved profiles (view/delete)
   0. Exit
 ```
 
@@ -82,9 +93,12 @@ are arriving *early* — usually your wired/internal output — so they wait for
 the Bluetooth path to catch up. Common starting points are in the
 40,000–150,000 µs range; nudge by ear.
 
-You can also adjust this later without recreating the whole combined sink by
-calling `pactl set-sink-latency-offset <sink-name> <microseconds>` directly
-(this is exactly what the tool does under the hood).
+You can also adjust this later without recreating the whole combined sink:
+choose menu option **6** to retune the latency of the combined sink you last
+created or loaded this session. It shows each slave's current offset as the
+default so you can nudge one value and press Enter to leave the rest alone.
+Under the hood this just calls `pactl set-sink-latency-offset <sink-name>
+<microseconds>` per slave, which you can also run directly if you prefer.
 
 ## Where profiles are stored
 
@@ -139,6 +153,6 @@ and `ui.py` can be exercised in tests without a real audio server —
 python3 -m unittest discover -s tests -v
 ```
 
-29 tests, no live PipeWire/pactl required — subprocess calls are mocked
+32 tests, no live PipeWire/pactl required — subprocess calls are mocked
 with realistic recorded JSON so the parsing and orchestration logic is
 exercised for real.

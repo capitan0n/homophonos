@@ -37,8 +37,12 @@ class ResolvedProfile:
 
     @property
     def can_create(self) -> bool:
-        """Combine-sink needs at least one real slave to make sense."""
-        return len(self.available) >= 1
+        """A combined sink needs at least two live slaves to be meaningful.
+
+        With fewer than two available, there's nothing to combine, so
+        callers should warn rather than attempt creation.
+        """
+        return len(self.available) >= 2
 
 
 def get_real_sinks(sinks: list[Sink]) -> list[Sink]:

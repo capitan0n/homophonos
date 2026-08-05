@@ -26,6 +26,24 @@ class PactlError(RuntimeError):
     """Raised when a pactl invocation fails or returns unusable output."""
 
 
+def _escape_property_value(value: str) -> str:
+    r"""Escape a string for use inside a pactl module property value.
+
+    The value ends up inside sink_properties=device.description="<value>".
+    The module-argument property parser treats a double quote as the end
+    of the quoted value and backslash as an escape char, so a raw " or \
+    in a user-chosen label would either truncate the description or break
+    parsing entirely. We backslash-escape both so the label survives
+    verbatim. Newlines are stripped because a property value is a single
+    logical line and an embedded newline can desync the parser.
+    """
+    cleaned = value.replace("\r", " ").replace("\n", " ")
+    # Order matters: escape backslashes first so we don't double-escape
+    # the backslashes we insert in front of quotes on the next step.
+    cleaned = cleaned.replace("\\", "\\\\").replace('"', '\\"')
+    return cleaned
+
+
 def _run(args: list[str], timeout: float = 10.0) -> subprocess.CompletedProcess:
     """Run a pactl command and return the completed process.
 
@@ -145,11 +163,14 @@ def load_combine_sink_module(
     # underlying module loader) splits module arguments on whitespace,
     # so a description containing spaces must stay inside one argv
     # item, quoted for the property parser, not split across items.
+    # The label is user-chosen free text, so its quotes/backslashes are
+    # escaped first; otherwise a " in the name would truncate the value.
+    safe_description = _escape_property_value(display_name)
     args = [
         "load-module",
         "module-combine-sink",
         f"sink_name={sink_name}",
-        f'sink_properties=device.description="{display_name}"',
+        f'sink_properties=device.description="{safe_description}"',
         f"slaves={slaves_value}",
     ]
 

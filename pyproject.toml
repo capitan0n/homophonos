@@ -1,0 +1,27 @@
+[build-system]
+# setuptools is the stdlib-adjacent default build backend; no third-party
+# build tooling is pulled in, matching the project's "stdlib only" stance.
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pw-combine"
+version = "0.1.0"
+description = "Interactive terminal tool for PipeWire/PulseAudio combined sinks"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+# Deliberately empty: everything used is in the Python standard library,
+# so a fresh Manjaro system needs no extra pip installs.
+dependencies = []
+
+[project.scripts]
+# Installs a `pw-combine` command on PATH that calls pwcombine.cli:main.
+# After `pip install --user .` you can run `pw-combine` from anywhere,
+# instead of `./pw-combine` from a source checkout.
+pw-combine = "pwcombine.cli:main"
+
+[tool.setuptools]
+# Only the package ships; the ./pw-combine launcher stays as a
+# convenience for running straight from a git checkout without installing.
+packages = ["pwcombine"]
