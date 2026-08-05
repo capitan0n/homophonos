@@ -1,0 +1,54 @@
+[
+  {
+    "index": 41,
+    "name": "alsa_output.pci-0000_00_1f.3.analog-stereo",
+    "description": "Built-in Audio Analog Stereo",
+    "driver": "PipeWire",
+    "sample_specification": "float32le 2ch 48000Hz",
+    "channel_map": "front-left,front-right",
+    "owner_module": 30,
+    "mute": "no",
+    "properties": {
+      "device.description": "Built-in Audio Analog Stereo"
+    }
+  },
+  {
+    "index": 55,
+    "name": "bluez_output.AA_BB_CC_11_22_33.1",
+    "description": "Lenovo Speaker 1",
+    "driver": "PipeWire",
+    "sample_specification": "s16le 2ch 44100Hz",
+    "channel_map": "front-left,front-right",
+    "owner_module": 42,
+    "mute": "no",
+    "properties": {
+      "device.description": "Lenovo Speaker 1"
+    }
+  },
+  {
+    "index": 58,
+    "name": "bluez_output.DD_EE_FF_44_55_66.1",
+    "description": "Lenovo Speaker 2",
+    "driver": "PipeWire",
+    "sample_specification": "s16le 2ch 44100Hz",
+    "channel_map": "front-left,front-right",
+    "owner_module": 47,
+    "mute": "no",
+    "properties": {
+      "device.description": "Lenovo Speaker 2"
+    }
+  },
+  {
+    "index": 70,
+    "name": "combined_pc_plus_bt",
+    "description": "PC + Lenovo Speakers",
+    "driver": "module-combine-sink.c",
+    "sample_specification": "float32le 2ch 48000Hz",
+    "channel_map": "front-left,front-right",
+    "owner_module": 99,
+    "mute": "no",
+    "properties": {
+      "device.description": "PC + Lenovo Speakers"
+    }
+  }
+]

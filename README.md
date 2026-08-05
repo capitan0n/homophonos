@@ -1,52 +1,144 @@
-Πρώτα ας δούμε τι ηχοσύστημα τρέχεις, γιατί η λύση διαφέρει αν είναι PipeWire ή σκέτο PulseAudio:
+# pw-combine
 
-bashpactl info | grep "Server Name"
+An interactive terminal tool for creating and managing PipeWire/PulseAudio
+**combined sinks** — so you can play audio out of your internal speakers and
+a Bluetooth speaker (or several) at the same time.
 
-Αν δει PipeWire (το πιθανότερο σε σύγχρονο Manjaro KDE), προχωράμε με τον τρόπο του PipeWire.
+Built for Manjaro + KDE Plasma running PipeWire, driven entirely through
+`pactl`. Pure Python standard library — no third-party dependencies.
 
-Η ιδέα
+## Why
 
-Ένα combined sink (ή "loopback combine") είναι ένα εικονικό sink ήχου. Ό,τι στέλνεις σε αυτό, το PipeWire το αντιγράφει και το προωθεί ταυτόχρονα σε δύο (ή περισσότερα) πραγματικά sinks — δηλαδή τα δύο σου Bluetooth ηχεία. Το player (Spotify, browser κ.λπ.) βλέπει ένα μόνο "ηχείο", αλλά πίσω παίζουν και τα δύο.
+`module-combine-sink` has always been able to do this, but wiring it up by
+hand means:
 
-Βήματα
+- Finding each sink's exact internal name (`bluez_output.AA_BB_CC...`)
+- Building a `pactl load-module module-combine-sink slaves=...` command by hand
+- Remembering to `set-default-sink` afterwards
+- Redoing all of this from scratch every time you reconnect your speakers
+- Guessing at latency offsets when Bluetooth audio drifts out of sync
 
-1. Σύνδεσε και τα δύο ηχεία μέσω Bluetooth (από το KDE applet ή bluetoothctl).
-2. Βρες τα ονόματα των sinks:
+`pw-combine` wraps that whole workflow in a menu.
 
-bashpactl list short sinks
+## Requirements
 
-Θα δεις κάτι σαν:
+- Python 3.9+
+- `pactl` on PATH (comes with `pipewire-pulse` or PulseAudio ≥ 15, both of
+  which support `pactl -f json ...`)
 
-45  bluez_output.AA_BB_CC_DD_EE_FF.1   ...
-46  bluez_output.11_22_33_44_55_66.1   ...
+No `pip install` needed — everything used is in the standard library.
 
-Το πρώτο πεδίο μετά το νούμερο είναι το όνομα του sink (bluez_output.XX...). Σημείωσε και τα δύο.
+## Usage
 
-3. Δημιούργησε το combined sink:
+```bash
+./pw-combine
+```
 
-bashpactl load-module module-combine-sink \
-  sink_name=combined \
-  slaves=bluez_output.AA_BB_CC_DD_EE_FF.1,bluez_output.11_22_33_44_55_66.1 \
-  sink_properties=device.description="Dual_Speakers"
-  
-Ανάλυση:
+You'll get a menu:
 
-module-combine-sink — το module που φτιάχνει το συνδυασμένο sink
-sink_name=combined — το εσωτερικό όνομα του νέου εικονικού sink
-slaves=... — τα πραγματικά sinks (τα ηχεία σου), χωρισμένα με κόμμα, χωρίς κενά
-sink_properties=device.description="Dual_Speakers" — το φιλικό όνομα που θα φαίνεται στο KDE (χρησιμοποίησε _ αντί για κενά εδώ)
+```
+== pw-combine ==
+  1. Create a new combined sink
+  2. Load a saved profile
+  3. Save current selection as a profile
+  4. List active sinks
+  5. Unload a combined sink
+  6. Manage saved profiles (view/delete)
+  0. Exit
+```
 
-4. Όρισέ το ως default ώστε όλος ο ήχος να πηγαίνει εκεί:
+### Typical first run
 
-bashpactl set-default-sink 
+1. Choose **1** to create a new combined sink.
+2. Pick two or more sinks from the numbered list (e.g. `1,2` for your
+   internal speakers plus a Bluetooth speaker).
+3. Optionally tune per-sink latency offsets if Bluetooth audio sounds out of
+   sync (see below).
+4. Give it a friendly name — this is what shows up in KDE's audio settings.
+5. It's created and set as your system default output immediately.
+6. You'll be offered the chance to save this as a named profile for next time.
 
-Ή απλά διάλεξέ το από το ηχητικό applet του KDE ("Dual Speakers").
+### Loading a saved profile later
 
-Πιθανά προβλήματα
+Choose **2**, pick the profile by number. If a saved Bluetooth speaker isn't
+currently connected, you'll get a clear warning and the tool will combine
+whatever *is* available (as long as at least two sinks remain) rather than
+failing outright.
 
-Latency / desync: Διαφορετικά ηχεία μπορεί να έχουν διαφορετική καθυστέρηση και να ακούγεται μικρό echo. Σε PipeWire ο συγχρονισμός είναι αρκετά καλός, αλλά αν χρειαστεί ρύθμιση γίνεται μέσω παραμέτρων latency.
+### Cleaning up
 
-Codec: Δύο A2DP streams ταυτόχρονα φορτώνουν περισσότερο τον Bluetooth controller. Αν ακούς διακοπές, ίσως βοηθήσει να ζορίσεις χαμηλότερο codec (SBC αντί AAC/aptX).
+Choose **5** to unload a combined sink. This runs `pactl unload-module` on
+the module that owns it — the combined sink disappears immediately and
+whatever was default before reverts through PipeWire's normal fallback
+behavior.
 
-Να γίνει μόνιμο (script)
-Το pactl load-module χάνεται στο reboot. Φτιάξε ένα μικρό script που να το ξανατρέχει
+## Fixing Bluetooth echo / desync
+
+Bluetooth speakers add real decode + transmit latency that your internal
+speakers don't have, so combining them naively often produces an echo or
+a slightly-out-of-sync effect. When creating a combined sink, say yes to
+latency tuning and set a positive **microsecond** offset on the sink(s) that
+are arriving *early* — usually your wired/internal output — so they wait for
+the Bluetooth path to catch up. Common starting points are in the
+40,000–150,000 µs range; nudge by ear.
+
+You can also adjust this later without recreating the whole combined sink by
+calling `pactl set-sink-latency-offset <sink-name> <microseconds>` directly
+(this is exactly what the tool does under the hood).
+
+## Where profiles are stored
+
+`~/.config/pw-combine/profiles.json` (or under `$XDG_CONFIG_HOME` if set).
+Plain JSON, safe to hand-edit or back up. Each profile stores the slave sink
+names and their latency offsets, not the combined sink's runtime state.
+
+## Architecture
+
+The codebase is split so each concern is testable and replaceable on its own:
+
+```
+pwcombine/
+  models.py        Sink / SlaveSpec / Profile dataclasses. No logic.
+  pactl_client.py   Every subprocess call to pactl lives here, isolated.
+  config.py         JSON profile persistence (load/save/delete).
+  combiner.py       Orchestration: resolves profiles against live sinks,
+                    builds combine-sink args, applies latency. No I/O.
+  ui.py             All print()/input(). No pactl calls, no decisions.
+  cli.py            Wires ui.py + combiner.py + config.py into the menu loop.
+tests/
+  test_parsing.py   pactl JSON parsing + combiner logic, mocked subprocess.
+  test_config.py    Profile save/load/delete round-trips, temp config dir.
+  test_cli_e2e.py   Full interactive menu flow, scripted stdin + mocked pactl.
+```
+
+`pactl_client.py` is the only module that touches `subprocess`. Everything
+above it works against `Sink`/`Profile` objects, which means `combiner.py`
+and `ui.py` can be exercised in tests without a real audio server —
+`tests/` mocks `subprocess.run` with recorded/synthetic JSON instead.
+
+### Design notes
+
+- **JSON over text scraping**: `pactl -f json list sinks` is parsed with
+  `json.loads`, not regexed. Malformed or unexpected entries are skipped
+  individually rather than crashing the whole listing.
+- **Combined sinks are self-identifying**: created sinks get a
+  `combined_` name prefix and are also detected via their driver string
+  (`module-combine-sink.c`), so the tool can tell real hardware sinks apart
+  from ones it created — this prevents accidentally nesting combined sinks.
+- **Missing devices degrade gracefully**: loading a profile where a
+  Bluetooth speaker isn't currently paired/connected warns about the
+  specific missing sink and proceeds with whatever's left, rather than
+  failing the whole operation.
+- **Atomic config writes**: profile saves write to a temp file and
+  `rename()` over the real one, so an interrupted write can't corrupt
+  previously saved profiles.
+
+## Running the tests
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+29 tests, no live PipeWire/pactl required — subprocess calls are mocked
+with realistic recorded JSON so the parsing and orchestration logic is
+exercised for real.
