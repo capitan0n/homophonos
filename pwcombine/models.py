@@ -42,16 +42,14 @@ class SlaveSpec:
     """One slave sink inside a combined-sink profile, plus its tuning."""
 
     sink_name: str
-    # module-combine-sink's per-slave latency offset, in microseconds.
-    # Positive values delay a sink relative to the others -- useful for
-    # compensating Bluetooth's extra decode/transmit latency.
+    # Per-sink latency offset, in microseconds. Positive values delay a
+    # sink relative to the others -- useful for compensating Bluetooth's
+    # extra decode/transmit latency.
+    #
+    # NOTE: on PipeWire this is applied via `pactl set-sink-latency-offset`
+    # AFTER the combined sink exists, not as an inline `sinks=name:offset`
+    # argument (which PipeWire's module-combine-sink does not support).
     latency_offset_us: int = 0
-
-    def to_pactl_arg(self) -> str:
-        """Render as the 'sink:offset' syntax pactl expects."""
-        if self.latency_offset_us:
-            return f"{self.sink_name}:{self.latency_offset_us}"
-        return self.sink_name
 
 
 @dataclass

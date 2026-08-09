@@ -156,11 +156,18 @@ class TestCombinerLogic(unittest.TestCase):
                 "Solo", [SlaveSpec(sink_name="only_one")], set_as_default=False
             )
 
-    def test_slave_spec_pactl_arg_formatting(self):
-        no_offset = SlaveSpec(sink_name="foo")
-        with_offset = SlaveSpec(sink_name="bar", latency_offset_us=50000)
-        self.assertEqual(no_offset.to_pactl_arg(), "foo")
-        self.assertEqual(with_offset.to_pactl_arg(), "bar:50000")
+    def test_unique_sink_name_avoids_collision(self):
+        # Base name free -> returned as-is.
+        self.assertEqual(
+            combiner.unique_sink_name("Combined Output", set()),
+            "combined_combined_output",
+        )
+        # Base taken -> suffixed; next taken too -> next suffix.
+        existing = {"combined_combined_output", "combined_combined_output_2"}
+        self.assertEqual(
+            combiner.unique_sink_name("Combined Output", existing),
+            "combined_combined_output_3",
+        )
 
 
 class TestModuleLoadArgFormatting(unittest.TestCase):
@@ -178,7 +185,7 @@ class TestModuleLoadArgFormatting(unittest.TestCase):
             module_index = pactl_client.load_combine_sink_module(
                 sink_name="combined_pc_plus_bt",
                 display_name="PC + Lenovo Speakers",
-                slave_args=["alsa_output.foo", "bluez_output.bar:80000"],
+                member_sink_names=["alsa_output.foo", "bluez_output.bar"],
             )
 
         self.assertEqual(module_index, 123)
@@ -187,10 +194,12 @@ class TestModuleLoadArgFormatting(unittest.TestCase):
         desc_items = [a for a in args if "device.description" in a]
         self.assertEqual(len(desc_items), 1)
         self.assertEqual(desc_items[0], 'sink_properties=device.description="PC + Lenovo Speakers"')
-        # slaves= must be one item containing both slave names joined by comma.
-        slave_items = [a for a in args if a.startswith("slaves=")]
-        self.assertEqual(len(slave_items), 1)
-        self.assertEqual(slave_items[0], "slaves=alsa_output.foo,bluez_output.bar:80000")
+        # PipeWire uses sinks= (not PulseAudio's slaves=), one item, comma-joined.
+        sink_items = [a for a in args if a.startswith("sinks=")]
+        self.assertEqual(len(sink_items), 1)
+        self.assertEqual(sink_items[0], "sinks=alsa_output.foo,bluez_output.bar")
+        # And the legacy slaves= must NOT be present.
+        self.assertEqual([a for a in args if a.startswith("slaves=")], [])
 
     def test_load_combine_sink_module_escapes_quotes_in_description(self):
         """A double quote or backslash in the user's label must be
@@ -205,7 +214,7 @@ class TestModuleLoadArgFormatting(unittest.TestCase):
             pactl_client.load_combine_sink_module(
                 sink_name="combined_x",
                 display_name='Weird" \\ name',
-                slave_args=["a", "b"],
+                member_sink_names=["a", "b"],
             )
 
         desc_items = [a for a in captured_args["args"] if "device.description" in a]

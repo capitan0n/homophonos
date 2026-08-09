@@ -11,6 +11,7 @@ description = "Interactive terminal tool for PipeWire/PulseAudio combined sinks"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
+license-files = ["LICENSE"]
 # Deliberately empty: everything used is in the Python standard library,
 # so a fresh Manjaro system needs no extra pip installs.
 dependencies = []

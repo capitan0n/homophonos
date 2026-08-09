@@ -13,7 +13,7 @@ Built for Manjaro + KDE Plasma running PipeWire, driven entirely through
 hand means:
 
 - Finding each sink's exact internal name (`bluez_output.AA_BB_CC...`)
-- Building a `pactl load-module module-combine-sink slaves=...` command by hand
+- Building a `pactl load-module module-combine-sink sinks=...` command by hand
 - Remembering to `set-default-sink` afterwards
 - Redoing all of this from scratch every time you reconnect your speakers
 - Guessing at latency offsets when Bluetooth audio drifts out of sync
@@ -93,12 +93,20 @@ are arriving *early* — usually your wired/internal output — so they wait for
 the Bluetooth path to catch up. Common starting points are in the
 40,000–150,000 µs range; nudge by ear.
 
-You can also adjust this later without recreating the whole combined sink:
-choose menu option **6** to retune the latency of the combined sink you last
-created or loaded this session. It shows each slave's current offset as the
-default so you can nudge one value and press Enter to leave the rest alone.
-Under the hood this just calls `pactl set-sink-latency-offset <sink-name>
-<microseconds>` per slave, which you can also run directly if you prefer.
+On PipeWire the combined sink is created first (with no inline offsets —
+PipeWire's `module-combine-sink` takes bare sink names in `sinks=` and has
+no per-sink `:offset` syntax), then each offset is applied as a separate
+`pactl set-sink-latency-offset <sink-name> <microseconds>` step. You can
+also adjust this later without recreating the whole sink: choose menu
+option **6** to retune the combined sink you last created or loaded this
+session; it shows each sink's current offset as the default so you can
+nudge one value and press Enter to leave the rest alone.
+
+> **Caveat, worth verifying on your hardware:** `set-sink-latency-offset`
+> exists in `pactl`, but on some PipeWire setups the more reliably audible
+> control for Bluetooth desync is `set-port-latency-offset` on the
+> `bluez_card.*` device + its output port. If per-sink offsets don't seem
+> to change anything for you, that's the alternative to reach for.
 
 ## Where profiles are stored
 
@@ -116,7 +124,8 @@ pwcombine/
   pactl_client.py   Every subprocess call to pactl lives here, isolated.
   config.py         JSON profile persistence (load/save/delete).
   combiner.py       Orchestration: resolves profiles against live sinks,
-                    builds combine-sink args, applies latency. No I/O.
+                    builds combine-sink args, applies latency as a
+                    separate post-create step. No terminal I/O.
   ui.py             All print()/input(). No pactl calls, no decisions.
   cli.py            Wires ui.py + combiner.py + config.py into the menu loop.
 tests/
@@ -156,3 +165,7 @@ python3 -m unittest discover -s tests -v
 32 tests, no live PipeWire/pactl required — subprocess calls are mocked
 with realistic recorded JSON so the parsing and orchestration logic is
 exercised for real.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

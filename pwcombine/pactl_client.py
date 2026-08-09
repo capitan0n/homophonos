@@ -116,6 +116,12 @@ def list_sinks() -> list[Sink]:
                 module_index = int(owner_module)
             except (TypeError, ValueError):
                 module_index = None
+            else:
+                # PulseAudio/PipeWire report "no owning module" as the
+                # 32-bit sentinel 4294967295 (2**32 - 1), not null. Treat
+                # it as absent so we never try to `unload-module` it.
+                if module_index == 0xFFFFFFFF:
+                    module_index = None
 
         sinks.append(
             Sink(
@@ -148,17 +154,22 @@ def set_default_sink(sink_name: str) -> None:
 def load_combine_sink_module(
     sink_name: str,
     display_name: str,
-    slave_args: list[str],
+    member_sink_names: list[str],
 ) -> int:
     """Load module-combine-sink and return the new module's index.
 
-    `slave_args` is the list of "sink_name" or "sink_name:offset"
-    strings already formatted for the slaves= argument.
+    `member_sink_names` is a plain list of existing sink names to
+    combine. On PipeWire's module-combine-sink the argument is
+    `sinks=` (comma-separated), NOT PulseAudio's legacy `slaves=`, and
+    it does NOT accept an inline `name:offset` per-sink latency syntax.
+    Per-sink latency compensation is applied separately afterwards via
+    set_sink_latency_offset(), so callers must pass bare sink names
+    here.
     """
-    if not slave_args:
-        raise PactlError("Cannot create a combined sink with zero slaves.")
+    if not member_sink_names:
+        raise PactlError("Cannot create a combined sink with zero member sinks.")
 
-    slaves_value = ",".join(slave_args)
+    sinks_value = ",".join(member_sink_names)
     # Each key=value pair is its own argv element -- pactl (like the
     # underlying module loader) splits module arguments on whitespace,
     # so a description containing spaces must stay inside one argv
@@ -171,7 +182,7 @@ def load_combine_sink_module(
         "module-combine-sink",
         f"sink_name={sink_name}",
         f'sink_properties=device.description="{safe_description}"',
-        f"slaves={slaves_value}",
+        f"sinks={sinks_value}",
     ]
 
     result = _run(args)
@@ -190,9 +201,14 @@ def unload_module(module_index: int) -> None:
 
 
 def set_sink_latency_offset(sink_name: str, offset_us: int) -> None:
-    """Adjust a slave sink's latency offset on an already-running combine sink.
+    """Adjust a sink's latency offset without recreating the combine sink.
 
-    Useful for retuning without tearing down and recreating the whole
-    combined sink.
+    NOTE (needs verification on real PipeWire hardware): `pactl` exposes
+    set-sink-latency-offset, but on PipeWire the more reliably-effective
+    control for Bluetooth desync is often set-port-latency-offset on the
+    device's bluez_card.* + port, which acts at the card/port level. If
+    per-sink offsets turn out to have no audible effect on your setup,
+    that's the alternative to try. This is called out here rather than
+    silently assumed because it can't be confirmed without live audio.
     """
     _run(["set-sink-latency-offset", sink_name, str(offset_us)])

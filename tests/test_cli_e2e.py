@@ -7,6 +7,7 @@ real tool" available without live PipeWire hardware.
 from __future__ import annotations
 
 import io
+import json
 import subprocess
 import sys
 import tempfile
@@ -153,9 +154,37 @@ class TestCliEndToEnd(unittest.TestCase):
         without recreating it. The retune should call
         set-sink-latency-offset per slave and report success."""
         calls = []
+        # Stateful: once a combined sink is loaded, subsequent `list sinks`
+        # calls must include it, so the retune liveness check (and the
+        # dedup name generator) see the real post-create state -- exactly
+        # what a live pactl would report.
+        live_sinks = json.loads(SAMPLE_SINKS_JSON)
 
-        def _tracking_dispatch(args, capture_output, text, timeout, check):
-            calls.append(list(args[1:]))
+        def _stateful_dispatch(args, capture_output, text, timeout, check):
+            sub = args[1:]
+            calls.append(list(sub))
+            if sub[:3] == ["-f", "json", "list"]:
+                return subprocess.CompletedProcess(
+                    args, 0, stdout=json.dumps(live_sinks), stderr=""
+                )
+            if sub[0] == "load-module":
+                # Parse sink_name=... out of the module args and register
+                # the new sink as live for later listings.
+                new_name = None
+                for a in sub:
+                    if a.startswith("sink_name="):
+                        new_name = a.split("=", 1)[1]
+                if new_name:
+                    live_sinks.append(
+                        {
+                            "index": 200 + len(live_sinks),
+                            "name": new_name,
+                            "description": "Test Combined",
+                            "driver": "module-combine-sink.c",
+                            "owner_module": 101,
+                        }
+                    )
+                return subprocess.CompletedProcess(args, 0, stdout="101\n", stderr="")
             return _fake_pactl_dispatch(args, capture_output, text, timeout, check)
 
         stdin_text = "\n".join(
@@ -163,9 +192,6 @@ class TestCliEndToEnd(unittest.TestCase):
                 "1",  # create new
                 "1,2",  # select internal + BT1
                 "n",  # skip latency tuning at creation
-                # Name chosen so sink_name_from_display() -> "combined_pc_plus_bt",
-                # which already exists in sample_sinks.json, satisfying the
-                # retune liveness check against the (mocked) live sink list.
                 "pc plus bt",  # display name
                 "n",  # don't save profile
                 "6",  # retune latency
@@ -175,7 +201,7 @@ class TestCliEndToEnd(unittest.TestCase):
             ]
         ) + "\n"
 
-        with mock.patch("subprocess.run", side_effect=_tracking_dispatch), mock.patch(
+        with mock.patch("subprocess.run", side_effect=_stateful_dispatch), mock.patch(
             "shutil.which", return_value="/usr/bin/pactl"
         ), mock.patch("sys.stdin", io.StringIO(stdin_text)), mock.patch(
             "sys.stdout", new_callable=io.StringIO

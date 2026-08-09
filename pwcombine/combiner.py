@@ -81,16 +81,44 @@ def sink_name_from_display(display_name: str) -> str:
     return f"{pactl_client.COMBINED_SINK_PREFIX}{safe}"
 
 
+def unique_sink_name(display_name: str, existing_names: set[str]) -> str:
+    """Return a combined-sink name derived from display_name that does not
+    collide with any name in existing_names.
+
+    sink_name_from_display() is deterministic, so two combined sinks made
+    from the same (or the default) label would otherwise get identical
+    sink_name= values. PipeWire then either rejects the second load or
+    creates an ambiguous duplicate, and set-default-sink can't tell them
+    apart. When the base name is already taken we append _2, _3, ... until
+    we find a free one.
+    """
+    base = sink_name_from_display(display_name)
+    if base not in existing_names:
+        return base
+    n = 2
+    while f"{base}_{n}" in existing_names:
+        n += 1
+    return f"{base}_{n}"
+
+
 def create_combined_sink(
     display_name: str,
     slaves: list[SlaveSpec],
     set_as_default: bool = True,
-) -> tuple[int, str]:
+    existing_sink_names: set[str] | None = None,
+) -> tuple[int, str, list[tuple[SlaveSpec, str]]]:
     """Create a combined sink from the given slaves.
 
-    Returns (module_index, sink_name) so the caller can offer to save
-    a profile or report success. Raises CombinerError with a friendly
-    message if there aren't enough slaves to combine.
+    Returns (module_index, sink_name, offset_failures). `offset_failures`
+    is a list of (slave, error_message) for any per-sink latency offset
+    that could not be applied -- empty when all succeeded or none were
+    requested. Raises CombinerError if there aren't enough slaves.
+
+    PipeWire's module-combine-sink takes bare sink names in `sinks=` and
+    has no inline per-sink latency syntax, so latency offsets are applied
+    as a separate step (set-sink-latency-offset) AFTER the sink exists.
+    That's the same mechanism the retune action uses -- one code path for
+    latency, not two.
     """
     if len(slaves) < 2:
         raise CombinerError(
@@ -99,13 +127,23 @@ def create_combined_sink(
             "already do by just picking that sink directly."
         )
 
-    sink_name = sink_name_from_display(display_name)
-    slave_args = [s.to_pactl_arg() for s in slaves]
+    if existing_sink_names:
+        sink_name = unique_sink_name(display_name, existing_sink_names)
+    else:
+        sink_name = sink_name_from_display(display_name)
+    member_sink_names = [s.sink_name for s in slaves]
 
     module_index = pactl_client.load_combine_sink_module(
         sink_name=sink_name,
         display_name=display_name,
-        slave_args=slave_args,
+        member_sink_names=member_sink_names,
+    )
+
+    # Apply any non-zero latency offsets now that the member sinks are
+    # part of a running combined sink. Failures here don't invalidate the
+    # sink itself, so they're reported back rather than raised.
+    offset_failures = apply_latency_offsets(
+        [s for s in slaves if s.latency_offset_us]
     )
 
     if set_as_default:
@@ -120,7 +158,7 @@ def create_combined_sink(
                 f"but could not be set as the default: {exc}"
             ) from exc
 
-    return module_index, sink_name
+    return module_index, sink_name, offset_failures
 
 
 def unload_combined_sink(sink: Sink) -> None:

@@ -49,7 +49,11 @@ def action_create_new(remember_last: dict) -> None:
     display_name = display_name or "Combined Output"
 
     try:
-        module_index, sink_name = combiner.create_combined_sink(display_name, slaves)
+        module_index, sink_name, offset_failures = combiner.create_combined_sink(
+            display_name,
+            slaves,
+            existing_sink_names={s.name for s in live_sinks},
+        )
     except combiner.CombinerError as exc:
         ui.error(str(exc))
         return
@@ -58,6 +62,8 @@ def action_create_new(remember_last: dict) -> None:
         return
 
     ui.success(f"Created '{display_name}' ({sink_name}, module #{module_index}) and set as default.")
+    for slave, message in offset_failures:
+        ui.warn(f"Latency offset for '{slave.sink_name}' was not applied: {message}")
 
     remember_last["slaves"] = slaves
     remember_last["combined_sink_name"] = sink_name
@@ -103,14 +109,18 @@ def action_load_profile(remember_last: dict) -> None:
         return
 
     try:
-        module_index, sink_name = combiner.create_combined_sink(
-            profile.name, resolved.available
+        module_index, sink_name, offset_failures = combiner.create_combined_sink(
+            profile.name,
+            resolved.available,
+            existing_sink_names={s.name for s in live_sinks},
         )
     except (combiner.CombinerError, pactl_client.PactlError) as exc:
         ui.error(f"Failed to load profile: {exc}")
         return
 
     ui.success(f"Loaded '{profile.name}' as {sink_name} (module #{module_index}) and set as default.")
+    for slave, message in offset_failures:
+        ui.warn(f"Latency offset for '{slave.sink_name}' was not applied: {message}")
     remember_last["slaves"] = resolved.available
     remember_last["combined_sink_name"] = sink_name
 
