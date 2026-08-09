@@ -1,8 +1,10 @@
-# pw-combine
+# homophonos
 
 An interactive terminal tool for creating and managing PipeWire/PulseAudio
 **combined sinks** — so you can play audio out of your internal speakers and
 a Bluetooth speaker (or several) at the same time.
+
+The CLI command is called `pw-combine`.
 
 Built for Manjaro + KDE Plasma running PipeWire, driven entirely through
 `pactl`. Pure Python standard library — no third-party dependencies.

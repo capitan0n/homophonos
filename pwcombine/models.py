@@ -1,4 +1,4 @@
-"""Plain data models shared across pw-combine.
+"""Plain data models shared across homophonos.
 
 Kept dependency-free (stdlib dataclasses only) so this module can be
 imported by parsing, UI, and orchestration code without creating
